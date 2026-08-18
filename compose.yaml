@@ -2,14 +2,18 @@ services:
   postgres:
     image: postgres:18
     container_name: dental-postgres
+    restart: unless-stopped
+
     environment:
-      POSTGRES_DB: dental_bot
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d dental_bot"]
       interval: 5s
@@ -19,14 +23,18 @@ services:
   bot:
     build: .
     container_name: dental-bot
+    restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: dental_bot
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
     depends_on:
       postgres:
         condition: service_healthy
