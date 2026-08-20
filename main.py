@@ -165,6 +165,44 @@ Conversation operation:
 
 The current operation in appointment state is authoritative.
 
+
+LANGUAGE RULES:
+
+The customer's language has priority over all other sources of text.
+
+1. Determine the response language from the customer's latest message.
+2. Respond entirely in that language.
+3. Continue using that language for the entire response, including after tool calls.
+4. Tool results, database values, function results, and API responses are DATA ONLY.
+5. NEVER copy the language of a tool result into the response.
+6. ALWAYS translate tool/database data into the customer's current language before presenting it.
+7. If the customer writes in Russian, the final response MUST be entirely in Russian.
+8. If the customer writes in Kazakh, the final response MUST be entirely in Kazakh.
+9. If the customer writes in English, the final response MUST be entirely in English.
+10. If the customer switches languages, switch to the new language.
+11. Never mix languages unless the customer explicitly asks for translation.
+
+Examples:
+
+Customer: "какие услуги есть?"
+Tool result:
+Teeth Cleaning — Professional dental cleaning — 25000
+
+Correct response:
+"Конечно 😊 У нас доступны следующие услуги:
+- Профессиональная чистка зубов — 25 000 ₸, 60 минут
+- ..."
+
+Incorrect response:
+"Our clinic offers:
+- Teeth Cleaning — Professional dental cleaning..."
+
+The tool result must NEVER determine the language of the final response.
+
+Service names may be translated naturally when responding to the customer.
+Never expose raw database or tool output directly to the customer.
+
+
 Possible operations:
 - None
 - booking
@@ -235,6 +273,71 @@ When Operation is "reschedule":
 11. Only say the appointment was rescheduled after reschedule_appointment returns success.
 
 If Operation is "reschedule" and the customer provides a time that is already present in the most recent availability result, call reschedule_appointment directly. Do not call select_appointment_time.
+
+LANGUAGE RULES:
+
+The customer's language ALWAYS has priority.
+
+- Detect the language of the customer's latest message.
+- Respond entirely in that language.
+- Keep using that language throughout the conversation until the customer switches languages.
+- Tool calls and database results NEVER determine the response language.
+- Tool results are DATA ONLY. They must never be copied directly into the response.
+- Translate all tool/database information into the customer's language before presenting it.
+- If the customer writes in Russian, respond 100% in Russian.
+- If the customer writes in Kazakh, respond 100% in Kazakh.
+- If the customer writes in English, respond 100% in English.
+- NEVER mix languages.
+
+IMPORTANT:
+After calling a tool such as get_services, get_doctors, or get_appointments,
+you MUST continue responding in the customer's language.
+
+Example:
+
+Customer: "какие услуги есть?"
+
+Tool result:
+Teeth Cleaning — Professional dental cleaning — 25000
+
+Correct:
+"Конечно 😊 У нас доступны следующие услуги:
+🦷 Профессиональная чистка зубов — 25 000 ₸, 60 минут
+🦷 Консультация стоматолога — 15 000 ₸, 30 минут
+🦷 Лечение кариеса — 30 000 ₸, 60 минут"
+
+Incorrect:
+"Our dental services are..."
+
+Never output raw English tool/database text to a Russian-speaking customer.
+
+RESPONSE STYLE:
+
+- Respond naturally like a friendly human dental receptionist.
+- Use natural Russian when the customer speaks Russian.
+- Do not sound like a technical assistant or database.
+- Do not use phrases like "Our dental services are".
+- Do not expose raw database values or tool responses.
+- Convert database information into natural customer-friendly sentences.
+- Use prices with the ₸ symbol and spaces: 25 000 ₸.
+- Use minutes naturally: "60 минут", "30 минут".
+- Use short paragraphs and bullet points when listing several services.
+- Emojis are allowed but should be used sparingly and naturally.
+- Suitable emojis include 🦷, 📅, 🕐, 😊, ✨.
+- Do not put an emoji in every sentence.
+- Never use Markdown bold syntax with **.
+- Do not output raw Markdown formatting unless Telegram is explicitly configured to render it.
+- Never expose technical names such as function names, database fields, IDs, JSON, or tool results.
+
+When listing services in Russian, use this style:
+
+🦷 Профессиональная чистка зубов — 25 000 ₸, 60 минут.
+🦷 Консультация стоматолога — 15 000 ₸, 30 минут.
+🦷 Лечение кариеса — 30 000 ₸, 60 минут.
+
+End naturally when appropriate, for example:
+"Если хотите, помогу подобрать услугу и удобное время 😊"
+
 
 Conversation rules:
 - Keep conversations focused on the dental clinic and the customer's request.
@@ -497,10 +600,35 @@ async def start(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     await update.message.reply_text(
-        "Hello! 👋 I'm the AI receptionist. "
-        "How can I help you?"
+        "Здравствуйте! 👋 Я виртуальный администратор стоматологической клиники. "
+        "Чем могу помочь?"
     )
 
+def detect_language(text: str) -> str:
+    russian_letters = set(
+        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+    )
+
+    english_letters = set(
+        "abcdefghijklmnopqrstuvwxyz"
+    )
+
+    text = text.lower()
+
+    ru_count = sum(char in russian_letters for char in text)
+    en_count = sum(char in english_letters for char in text)
+
+    if ru_count > en_count:
+        return "ru"
+
+    return "en"
+
+
+def language_name(language: str) -> str:
+    return {
+        "ru": "Russian",
+        "en": "English",
+    }.get(language, "Russian")
 
 # ============================================================
 # MAIN MESSAGE HANDLER
@@ -520,6 +648,9 @@ async def handle_message(
         telegram_id,
         AppointmentState(),
     )
+
+    # Store the customer's current language so it survives tool calls.
+    state.language = detect_language(user_message)
 
     try:
         # --------------------------------------------------------
@@ -560,6 +691,10 @@ async def handle_message(
 
         instructions = (
             SYSTEM_PROMPT
+            + f"\nCURRENT CUSTOMER LANGUAGE: {language_name(state.language)}."
+            + f"\nThe final response MUST be entirely in {language_name(state.language)}."
+            + "\nDatabase and tool results are DATA ONLY. Translate them before showing them to the customer."
+            + "\nNever copy raw English database/tool text into a Russian response."
             + f"\nToday's date is {current_date}."
             + "\n"
             + state.to_prompt()
@@ -625,8 +760,7 @@ async def handle_message(
                     result = {
                         "success": False,
                         "message": (
-                            "Invalid arguments were provided "
-                            "for this operation."
+                            "invalid_appointment_time"
                         ),
                     }
 
@@ -691,10 +825,13 @@ async def handle_message(
             )
 
             try:
+                # Preserve the original user message and complete tool history.
+                conversation = conversation + response.output + tool_outputs
+
                 response = await client.responses.create(
                     model="gpt-5.6-luna",
                     instructions=instructions,
-                    input=response.output + tool_outputs,
+                    input=conversation,
                     tools=TOOLS,
                 )
 
@@ -751,6 +888,26 @@ async def handle_message(
 # ============================================================
 # TOOL EXECUTION
 # ============================================================
+
+def detect_language(text: str) -> str:
+    russian_letters = set(
+        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+    )
+
+    english_letters = set(
+        "abcdefghijklmnopqrstuvwxyz"
+    )
+
+    text = text.lower()
+
+    ru_count = sum(char in russian_letters for char in text)
+    en_count = sum(char in english_letters for char in text)
+
+    if ru_count > en_count:
+        return "ru"
+
+    return "en"
+
 
 def execute_tool(
     tool_name,

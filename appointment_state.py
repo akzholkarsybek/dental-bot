@@ -8,6 +8,7 @@ class AppointmentState:
         self.time = None
         self.period = None
         self.customer_name = None
+        self.language = "ru"
 
     def clear(self):
         self.operation = None
@@ -18,6 +19,7 @@ class AppointmentState:
         self.time = None
         self.period = None
         self.customer_name = None
+        # Keep the customer's language
 
     def is_complete(self):
         return all([
@@ -29,14 +31,15 @@ class AppointmentState:
 
     def to_prompt(self):
         return f"""
-Current appointment state:
+Текущее состояние записи:
 
-Operation: {self.operation}
-Appointment ID: {self.appointment_id}
-Service ID: {self.service_id}
-Service: {self.service_name}
-Date: {self.date}
-Time: {self.time}
-Period: {self.period}
-Customer name: {self.customer_name}
+Операция: {self.operation}
+ID записи: {self.appointment_id}
+ID услуги: {self.service_id}
+Услуга: {self.service_name}
+Дата: {self.date}
+Время: {self.time}
+Период: {self.period}
+Имя клиента: {self.customer_name}
+Язык клиента: {self.language}
 """
